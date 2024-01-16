@@ -1,0 +1,1 @@
+/home/eig520/Desktop/NeuralNetworks/NNs/target/release/nns: /home/eig520/Desktop/NeuralNetworks/NNs/src/activations.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/lib.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/main.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/network.rs

@@ -1,6 +1,6 @@
 use crate::activations::*;
 
-const DEFAULT_LAYER_SIZE: usize = 1024;
+const DEFAULT_LAYER_SIZE: usize = 3;
 
 #[derive(Clone)]
 pub struct Node {
@@ -74,6 +74,10 @@ pub struct TNode {
     pub value: f32,
     pub gradients: Vec<f32>,
     pub gradient: f32,
+
+    pub first_moment_vectors: Vec<f32>,
+    pub second_moment_vectors: Vec<f32>,
+    pub iteration_count: i32,
 }
 
 impl TNode {
@@ -96,16 +100,42 @@ impl TNode {
         }
     }
 
+    pub fn move_adam(&mut self, beta_1: f32, beta_2: f32, alpha: f32, epsilon: f32) {
+        //println!("{:?} ", self.weights);
+
+        for i in 0..self.weights.len() {
+            self.first_moment_vectors[i] = beta_1 * self.first_moment_vectors[i] + (1.0 - beta_1) * self.gradients[i];
+            self.second_moment_vectors[i] = beta_2 * self.second_moment_vectors[i] + (1.0 - beta_2) * self.gradients[i] * self.gradients[i];
+
+            let bias_corrected_first = self.first_moment_vectors[i] / (1.0 - beta_1.powf(self.iteration_count as f32));
+            let bias_corrected_second = self.second_moment_vectors[i] / (1.0 - beta_2.powf(self.iteration_count as f32));
+            
+            //print!("{} ", bias_corrected_second);
+
+            self.weights[i] -= alpha * bias_corrected_first / (bias_corrected_second.sqrt() + epsilon)
+        }
+    }
+
     pub fn print_value(&self) {print!("{} ", self.value);}
 }
 
 impl Default for TNode {
     fn default() -> Self {
+        TNode::new(DEFAULT_LAYER_SIZE)
+    }
+}
+
+impl TNode {
+    fn new(weights: usize) -> Self {
         Self {
-            weights: vec![-1.0; DEFAULT_LAYER_SIZE],
+            weights: vec![-1.0; weights],
             value: 0.0,
-            gradients: vec![0.0; DEFAULT_LAYER_SIZE],
+            gradients: vec![0.0; weights],
             gradient: 0.0,
+
+            first_moment_vectors: vec![0.0; weights],
+            second_moment_vectors: vec![0.0; weights],
+            iteration_count: 0,
         }
     }
 }
@@ -158,11 +188,27 @@ impl<T: Activation> TLayer<T> {
         }
     }
 
+    fn move_adam(&mut self, alpha: f32, beta_1: f32, beta_2: f32, epsilon: f32) {
+        for node in &mut self.nodes {
+            node.iteration_count += 1;
+            node.move_adam(beta_1, beta_2, alpha, epsilon);
+        }
+    }
+
     pub fn print_value(&self) {
         for node in self.nodes.clone() {
             node.print_value();
         }
         println!();
+    }
+}
+
+impl<T: Activation + Default> TLayer<T> {
+    pub fn new(prev_size: usize, size: usize, activation: T) -> TLayer<T> {
+        Self {
+            nodes:vec![TNode::new(prev_size); size],
+            activation
+        }
     }
 }
 
@@ -202,8 +248,6 @@ impl TrainableFFNet {
         final_layer.gen_gradients_from_expected(expected_outputs);
 
         let mut layers = self.layers.iter_mut().rev();
-
-        //layers.next();
         
         let mut l = layers.next();
         let mut prev = layers.next();
@@ -226,11 +270,28 @@ impl TrainableFFNet {
         }
     }
 
-    pub fn train_one_case(&mut self, inputs: &Vec<f32>, expected_outputs: &Vec<f32>, lr: f32) {
+    pub fn move_adam(&mut self, alpha: f32, beta_1:f32, beta_2: f32, epsilon: f32) {
+        for layer in &mut self.layers {
+            layer.move_adam(alpha, beta_1, beta_2, epsilon);
+        }
+    }
+
+    pub fn train_one_case_stochastic_gradient_descent(&mut self, inputs: &Vec<f32>, expected_outputs: &Vec<f32>, lr: f32) {
         self.forward_pass(inputs);
-        self.print_value();println!();
         self.backward_pass(expected_outputs);
         self.move_by_gradient(lr);
+    }
+
+    pub fn train_one_case_adam(&mut self, inputs: &Vec<f32>, expected_outputs: &Vec<f32>, alpha: f32, beta_1:f32, beta_2: f32, epsilon: f32) {
+        self.forward_pass(inputs);
+        self.backward_pass(expected_outputs);
+        self.move_adam(alpha, beta_1, beta_2, epsilon);
+    }
+
+    pub fn train_on(&mut self, inputs: &Vec<Vec<f32>>, expected_outputs: &Vec<Vec<f32>>) {
+        for (input,expected) in inputs.into_iter().zip(expected_outputs) {
+            self.train_one_case_adam(input, expected, 0.001, 0.9, 0.999, 0.00000001)
+        }
     }
 
     pub fn print_value(&self) {
@@ -243,7 +304,7 @@ impl TrainableFFNet {
 impl Default for TrainableFFNet {
     fn default() -> Self {
         Self {
-            layers: vec![ TLayer::default(); 100]
+            layers: vec![ TLayer::default(); 100 ]
         }
     }
 }

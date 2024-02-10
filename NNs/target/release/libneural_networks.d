@@ -1,0 +1,1 @@
+/home/eig520/Desktop/NeuralNetworks/NNs/target/release/libneural_networks.rlib: /home/eig520/Desktop/NeuralNetworks/NNs/src/lib.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/model.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/neural_nets/activations.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/neural_nets/network.rs /home/eig520/Desktop/NeuralNetworks/NNs/src/neural_nets.rs

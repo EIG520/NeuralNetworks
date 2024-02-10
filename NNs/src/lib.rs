@@ -1,3 +1,2 @@
-pub mod network;
-pub mod activations;
 pub mod model;
+pub mod neural_nets;

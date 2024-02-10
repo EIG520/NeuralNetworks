@@ -1,0 +1,1 @@
+Zip<std::slice::Iter<'_, usize>, std::iter::Chain<Map<std::ops::Range<usize>, [closure@src/network.rs:261:39: 261:42]>, Skip<std::slice::Iter<'_, usize>>>>

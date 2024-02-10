@@ -1,83 +1,21 @@
 use crate::activations::*;
+use crate::model::*;
+use rand::prelude::*;
 
 const DEFAULT_LAYER_SIZE: usize = 3;
 
-#[derive(Clone)]
-pub struct Node {
-    weights: Vec<f32>,
-}
-
-impl Node {
-    pub fn gen_val_from_inputs(&self, inputs: &Vec<f32>) -> f32 {
-        inputs.iter().enumerate().map(|(i,f)| f * self.weights[i]).sum()
-    }
-}
-
-impl Default for Node {
-    fn default() -> Self {
-        Self {
-            weights: vec![-1.0; DEFAULT_LAYER_SIZE]
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Layer<T: Activation> {
-    nodes: Vec<Node>,
-    activation: T,
-}
-
-impl<T: Activation> Layer<T> {
-    fn step(&self, input: &Vec<f32>) -> Vec<f32> {
-        self.nodes.iter().map(
-            |node| self.activation.apply(node.gen_val_from_inputs(input))
-        ).collect()
-    }
-}
-
-impl<T: Activation + Default> Default for Layer<T> {
-    fn default() -> Self {
-        Self {
-            nodes:vec![Node::default(); DEFAULT_LAYER_SIZE],
-            activation:T::default()
-        }
-    }
-}
-
-pub struct FFNet {
-    layers: Vec<Layer<LeakyReLU>>,
-}
-
-impl FFNet {
-    pub fn gen_out(&self, inputs: Vec<f32>) -> Vec<f32> {
-        self.layers.iter().fold(
-            inputs,
-            |input, layer| layer.step(&input)
-        )
-    }
-}
-
-impl Default for FFNet {
-    fn default() -> Self {
-        Self {
-            layers: vec![ Layer::default(); 100]
-        }
-    }
-}
-
 // Trainable net
-// Probably slightly less performant because it is trainable
 
 #[derive(Clone)]
 pub struct TNode {
-    pub weights: Vec<f32>,
-    pub value: f32,
-    pub gradients: Vec<f32>,
-    pub gradient: f32,
+    weights: Vec<f32>,
+    value: f32,
+    gradients: Vec<f32>,
+    gradient: f32,
 
-    pub first_moment_vectors: Vec<f32>,
-    pub second_moment_vectors: Vec<f32>,
-    pub iteration_count: i32,
+    first_moment_vectors: Vec<f32>,
+    second_moment_vectors: Vec<f32>,
+    iteration_count: i32,
 }
 
 impl TNode {
@@ -89,7 +27,7 @@ impl TNode {
     }
     pub fn backward_pass<T: Activation, T1: Activation>(&mut self, act: T, prev: &mut TLayer<T1>) {
         for i in 0..self.weights.len() {
-            self.gradients[i] = self.weights[i] * act.apply_derivative(self.value) * self.gradient;
+            self.gradients[i] = prev.nodes[i].value * act.apply_derivative(self.value) * self.gradient;
             prev.update_node_gradient(i, self.gradients[i]);
         }
     }
@@ -107,16 +45,24 @@ impl TNode {
             self.first_moment_vectors[i] = beta_1 * self.first_moment_vectors[i] + (1.0 - beta_1) * self.gradients[i];
             self.second_moment_vectors[i] = beta_2 * self.second_moment_vectors[i] + (1.0 - beta_2) * self.gradients[i] * self.gradients[i];
 
-            let bias_corrected_first = self.first_moment_vectors[i] / (1.0 - beta_1.powf(self.iteration_count as f32));
-            let bias_corrected_second = self.second_moment_vectors[i] / (1.0 - beta_2.powf(self.iteration_count as f32));
+            let bias_corrected_first = self.first_moment_vectors[i] / (1.0 - beta_1.powi(self.iteration_count));
+            let bias_corrected_second = self.second_moment_vectors[i] / (1.0 - beta_2.powi(self.iteration_count));
             
             //print!("{} ", bias_corrected_second);
 
             self.weights[i] -= alpha * bias_corrected_first / (bias_corrected_second.sqrt() + epsilon)
         }
     }
+    
+    pub fn reset_adam_info(&mut self) {
+        self.second_moment_vectors = vec![0.0; self.second_moment_vectors.len()];
+        self.first_moment_vectors = vec![0.0; self.first_moment_vectors.len()];
+        self.iteration_count = 0;
+    }
 
-    pub fn print_value(&self) {print!("{} ", self.value);}
+    pub fn print_value(&self) {
+        print!("{}: {:?} ", self.value, self.weights.iter().map(|i| format!("{:.3}", i)).collect::<Vec<String>>());
+    }
 }
 
 impl Default for TNode {
@@ -128,7 +74,9 @@ impl Default for TNode {
 impl TNode {
     fn new(weights: usize) -> Self {
         Self {
-            weights: vec![-1.0; weights],
+            weights: vec![0.0; weights].iter()
+                .map(|_| rand::thread_rng().gen::<f32>())
+                .collect::<Vec<f32>>(),
             value: 0.0,
             gradients: vec![0.0; weights],
             gradient: 0.0,
@@ -142,8 +90,8 @@ impl TNode {
 
 #[derive(Clone)]
 pub struct TLayer<T: Activation> {
-    pub nodes: Vec<TNode>,
-    pub activation: T,
+    nodes: Vec<TNode>,
+    activation: T,
 }
 
 impl<T: Activation> TLayer<T> {
@@ -156,6 +104,12 @@ impl<T: Activation> TLayer<T> {
     fn forward_pass(&mut self, input: &Vec<f32>) {
         for node in &mut self.nodes {
             node.forward_pass(input, self.activation);
+        }
+    }
+
+    pub fn reset_adam_info(&mut self) {
+        for node in self.nodes.iter_mut() {
+            node.reset_adam_info();
         }
     }
 
@@ -201,12 +155,30 @@ impl<T: Activation> TLayer<T> {
         }
         println!();
     }
+
+    pub fn set_values(&mut self, to: &Vec<f32>) {
+        for i in 0..to.len() {
+            self.nodes[i].value = to[i];
+        }
+    }
+
+    pub fn values(&mut self) -> Vec<f32> {
+        let mut values = vec![];
+
+        for node in &mut self.nodes {
+            values.push(node.value);
+        }
+
+        values
+    }
 }
 
 impl<T: Activation + Default> TLayer<T> {
     pub fn new(prev_size: usize, size: usize, activation: T) -> TLayer<T> {
         Self {
-            nodes:vec![TNode::new(prev_size); size],
+            nodes:vec![TNode::new(0); size].iter()
+                .map(|_| TNode::new(prev_size))
+                .collect::<Vec<TNode>>(),
             activation
         }
     }
@@ -222,38 +194,42 @@ impl<T: Activation + Default> Default for TLayer<T> {
 }
 
 pub struct TrainableFFNet {
-    pub layers: Vec<TLayer<LeakyReLU>>,
+    layers: Vec<TLayer<LeakyReLU>>,
 }
 
 impl TrainableFFNet {
     pub fn gen_out(&self, inputs: Vec<f32>) -> Vec<f32> {
-        self.layers.iter().fold(
+        self.layers.iter().skip(1).fold(
             inputs,
             |input, layer| layer.step(&input)
         )
     }
 
     pub fn forward_pass(&mut self, inputs: &Vec<f32>) {
-        let mut cur: Vec<f32> = inputs.clone();
-        for layer in &mut self.layers {
-            layer.forward_pass(&cur);
-            cur = layer.step(&cur);
+        self.layers[0].set_values(inputs);
+
+        for i in 1..self.layers.len() {
+            let pvals = self.layers[i-1].values();
+            let layer = &mut self.layers[i];
+
+            layer.forward_pass(&pvals);
         }
     }
 
     pub fn backward_pass(&mut self, expected_outputs: &Vec<f32>) {
         let last = self.layers.len()-1;
+        let mut first_layer = vec![TLayer::new(0, self.layers[0].nodes[0].weights.len(), LeakyReLU {})];
         let final_layer = &mut self.layers[last];
 
         final_layer.gen_gradients_from_expected(expected_outputs);
 
-        let mut layers = self.layers.iter_mut().rev();
+        let mut layers = self.layers.iter_mut().rev().chain(first_layer.iter_mut());
         
         let mut l = layers.next();
         let mut prev = layers.next();
 
-
         while let Some(pre) = prev.as_mut() {
+
             if let Some(layer) = l {
                 pre.reset_node_gradients();
                 layer.backward_pass(pre);
@@ -283,14 +259,23 @@ impl TrainableFFNet {
     }
 
     pub fn train_one_case_adam(&mut self, inputs: &Vec<f32>, expected_outputs: &Vec<f32>, alpha: f32, beta_1:f32, beta_2: f32, epsilon: f32) {
-        self.forward_pass(inputs);
-        self.backward_pass(expected_outputs);
-        self.move_adam(alpha, beta_1, beta_2, epsilon);
+        //self.reset_adam_info();
+        //for _ in 0..iters {
+            self.forward_pass(inputs);
+            self.backward_pass(expected_outputs);
+            self.move_adam(alpha, beta_1, beta_2, epsilon);
+        //}
+    }
+
+    pub fn reset_adam_info(&mut self) {
+        for layer in self.layers.iter_mut() {
+            layer.reset_adam_info();
+        }
     }
 
     pub fn train_on(&mut self, inputs: &Vec<Vec<f32>>, expected_outputs: &Vec<Vec<f32>>) {
         for (input,expected) in inputs.into_iter().zip(expected_outputs) {
-            self.train_one_case_adam(input, expected, 0.001, 0.9, 0.999, 0.00000001)
+            self.train_one_case_adam(input, expected,0.0001, 0.9, 0.999, 0.00000001)
         }
     }
 
@@ -298,6 +283,37 @@ impl TrainableFFNet {
         for layer in self.layers.clone() {
             layer.print_value();
         }
+    }
+
+}
+
+impl TrainableFFNet {
+
+}
+
+impl Model for TrainableFFNet {
+    type Shape = Vec<usize>;
+
+    fn predict(&self, input: Vec<f32>) -> Vec<f32> {
+        self.gen_out(input)
+    }
+    fn fit(&mut self, inputs: Vec<Vec<f32>>, expected: Vec<Vec<f32>>, epochs: usize) {
+        for _ in 0..epochs {
+            self.train_on(&inputs, &expected);
+        }
+    }
+
+    fn new(shape: Vec<usize>) -> Self {
+        let slf = Self {
+            layers: shape.iter()
+                .zip((0..=0)
+                    .chain(shape.iter().map(|&i| i))
+                )
+                .map(|(&c, p)| TLayer::new(p, c, LeakyReLU {}))
+                .collect()
+        };
+
+        slf
     }
 }
 

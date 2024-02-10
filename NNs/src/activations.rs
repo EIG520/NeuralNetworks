@@ -10,9 +10,24 @@ impl Activation for LeakyReLU {
         if n > 0.0 {n} else {n / 2.0}
     }
     fn apply_derivative(&self, n:f32) -> f32 {
-        if n > 0.0 {1.0} else {0.5}
+        if n >= 0.0 {1.0} else {0.5}
     }
 }
 impl Default for LeakyReLU {
+    fn default() -> Self {Self {}}
+}
+
+#[derive(Clone, Copy)]
+pub struct ClippedReLU {}
+impl Activation for ClippedReLU {
+    fn apply(&self, n:f32) -> f32 {
+        if n >= 0.0 {if n <= 1.0 {n} else {1.0}}
+        else {0.0}
+    }
+    fn apply_derivative(&self, n:f32) -> f32 {
+        if n > 0.0 {1.0} else {0.5}
+    }
+}
+impl Default for ClippedReLU {
     fn default() -> Self {Self {}}
 }
